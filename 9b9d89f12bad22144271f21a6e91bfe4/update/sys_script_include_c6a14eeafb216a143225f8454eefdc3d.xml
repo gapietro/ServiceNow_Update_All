@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_script_include">
+    <sys_script_include action="INSERT_OR_UPDATE">
+        <access>public</access>
+        <active>true</active>
+        <api_name>x_snc_update_all.UpdateAllPlugins</api_name>
+        <caller_access>1</caller_access>
+        <client_callable>false</client_callable>
+        <description>This Script Include provides automated plugin update functionality for ServiceNow instances. It can be called programmatically or via the UI Action to update multiple plugins in a controlled manner.&#13;
+&#13;
+Key Features:&#13;
+- Processes plugins in configurable batch sizes&#13;
+- Supports a skip list for excluding specific plugins&#13;
+- Provides detailed logging of the update process&#13;
+- Returns a summary of updates, skips, and failures&#13;
+- Can be scheduled to run automatically or triggered manually&#13;
+&#13;
+Usage:&#13;
+var updater = new global.x_snc_update_all.UpdateAllPlugins();&#13;
+var result = updater();&#13;
+&#13;
+Configuration:&#13;
+- x_snc_update_all.plugin.update.batch.size: Maximum number of plugins to update in one run&#13;
+- x_snc_update_all.plugin.update.skip.list: Comma-separated list of plugins to skip&#13;
+&#13;
+Returns:&#13;
+{&#13;
+    updated: [array of successfully updated plugin names],&#13;
+    skipped: [array of skipped plugin names],&#13;
+    failed: [array of failed plugin names with error details],&#13;
+    duration: total execution time in seconds&#13;
+}</description>
+        <mobile_callable>false</mobile_callable>
+        <name>UpdateAllPlugins</name>
+        <sandbox_callable>false</sandbox_callable>
+        <script><![CDATA[var UpdateAllPlugins = function() {
+    var scriptStartTime = new Date();
+    gs.info('Plugin update process (x_snc_update_all) ▸ STARTED at ' + scriptStartTime);
+
+    var skipListProperty = gs.getProperty('x_snc_update_all.plugin.update.skip.list', '');
+    var skip = (skipListProperty || '')
+            .split(',')
+            .map(function (s) {return s.trim();})
+            .filter(function(s) {return s.length > 0;});
+    
+    if (skip.length > 0) {
+        gs.info('Plugin update process (x_snc_update_all) ▸ Skipping: ' + skip.join(', '));
+    }
+
+    var gr = new GlideRecord('sys_store_app');
+    gr.addEncodedQuery('hide_on_ui=false^update_available=true');
+    gr.orderBy('name');
+    gr.query();
+    
+    var upgrader = new sn_appclient.AppUpgrader();
+    var updated = [];
+    var skipped = [];
+    var failed = [];
+    var total = gr.getRowCount();
+    
+    gs.info('Plugin update process (x_snc_update_all) ▸ Found ' + total + ' updatable plugins');
+
+    var maxUpdatesPerRun = parseInt(gs.getProperty('x_snc_update_all.plugin.update.batch.size', '10')) || 10;
+    var updateCount = 0;
+
+    while (gr.next() && updateCount < maxUpdatesPerRun) {
+        var id = gr.getUniqueValue();
+        var source = gr.getValue('source');
+        var name = gr.getValue('name');
+        var currentVer = gr.getValue('version');
+        var newVersion = gr.getValue('latest_version');
+
+        if (skip.indexOf(source) > -1 || skip.indexOf(id) > -1) {
+            skipped.push(name);
+            gs.info('Plugin update (x_snc_update_all) ▸ SKIPPED ' + name + ' (in skip list)');
+            continue;
+        }
+
+        try {
+            gs.info('Plugin update (x_snc_update_all) ▸ QUEUED ' + name + ' [' + currentVer + ' → ' + newVersion + ']');
+            var updateStartTime = new Date();
+            upgrader.upgrade(id, newVersion, false);
+            var updateDuration = (new Date() - updateStartTime) / 1000;
+            updated.push(name);
+            updateCount++;
+            gs.info('Plugin update (x_snc_update_all) ▸ COMPLETE ' + name + ' (took ' + updateDuration + 's)');
+        } catch (ex) {
+            var errorInfo = name + ' (' + (ex.message || String(ex)) + ')';
+            failed.push(errorInfo);
+            gs.error('Plugin update (x_snc_update_all) ▸ FAILED ' + name + ' – ' + ex);
+        }
+    }
+
+    if (updateCount >= maxUpdatesPerRun && total > updateCount) {
+        gs.info('Plugin update process (x_snc_update_all) ▸ Processed batch of ' + maxUpdatesPerRun + '. Remaining: ' + (total - updateCount));
+    }
+
+    var totalDuration = (new Date() - scriptStartTime) / 1000;
+    gs.info('Plugin update summary (x_snc_update_all) ▸ Updated: ' + updated.length +
+            ', Skipped: ' + skipped.length +
+            ', Failed: '  + failed.length + 
+            ', Duration: ' + totalDuration + 's');
+
+    if (failed.length > 0) {
+        gs.info('Plugin update failures (x_snc_update_all) ▸ ' + failed.join(', '));
+    }
+
+    return {
+        updated: updated,
+        skipped: skipped,
+        failed: failed,
+        duration: totalDuration
+    };
+};]]></script>
+        <sys_class_name>sys_script_include</sys_class_name>
+        <sys_created_by>admin</sys_created_by>
+        <sys_created_on>2025-05-19 14:20:25</sys_created_on>
+        <sys_id>c6a14eeafb216a143225f8454eefdc3d</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>UpdateAllPlugins</sys_name>
+        <sys_package display_value="ServiceNow Update All" source="x_snc_update_all">9b9d89f12bad22144271f21a6e91bfe4</sys_package>
+        <sys_policy>read</sys_policy>
+        <sys_scope display_value="ServiceNow Update All">9b9d89f12bad22144271f21a6e91bfe4</sys_scope>
+        <sys_update_name>sys_script_include_c6a14eeafb216a143225f8454eefdc3d</sys_update_name>
+        <sys_updated_by>admin</sys_updated_by>
+        <sys_updated_on>2025-05-19 14:20:25</sys_updated_on>
+    </sys_script_include>
+</record_update>
