@@ -36,6 +36,55 @@ Returns:&#13;
     var scriptStartTime = new Date();
     gs.info('Plugin update process (x_snc_update_all) ▸ STARTED at ' + scriptStartTime);
 
+    // Refresh store data before checking for updates
+    try {
+        gs.info('Plugin update process (x_snc_update_all) ▸ Refreshing store data (synchronously via worker)...');
+        
+        var worker = new GlideScriptedHierarchicalWorker();
+        worker.setProgressName('Checking for application updates (via UpdateAllPlugins script)');
+        worker.setScriptIncludeName('AppStoreAjax'); // System script include for app store operations
+        worker.setScriptIncludeMethod('checkForUpdates'); // Standard method to refresh app updates
+        // worker.putMethodArg('sysparm_description', ''); // Optional: usually empty for system check
+        worker.start();
+        var trackerId = worker.getProgressID();
+
+        var maxWaitTimeMs = 60000; // Maximum wait time: 60 seconds
+        var waitedTimeMs = 0;
+        var pollIntervalMs = 2000; // Check status every 2 seconds
+
+        if (trackerId) {
+            var progressWorkerGR = new GlideRecord('sys_progress_worker');
+            while (waitedTimeMs < maxWaitTimeMs) {
+                if (progressWorkerGR.get(trackerId)) {
+                    var state = progressWorkerGR.getValue('state');
+                    if (state == 'complete' || state == 'failed' || state == 'cancelled') {
+                        if (state == 'complete') {
+                            gs.info('Plugin update process (x_snc_update_all) ▸ App update check worker completed successfully.');
+                        } else {
+                            gs.error('Plugin update process (x_snc_update_all) ▸ App update check worker finished with state: ' + state + '. Message: ' + progressWorkerGR.getValue('message'));
+                        }
+                        break; // Exit loop
+                    }
+                } else {
+                    gs.warn('Plugin update process (x_snc_update_all) ▸ Could not find progress worker with ID: ' + trackerId + '. Assuming completion or issue.');
+                    break; // Exit loop if tracker disappears
+                }
+                gs.sleep(pollIntervalMs);
+                waitedTimeMs += pollIntervalMs;
+            }
+            if (waitedTimeMs >= maxWaitTimeMs) {
+                gs.warn('Plugin update process (x_snc_update_all) ▸ App update check worker timed out after ' + (maxWaitTimeMs / 1000) + ' seconds.');
+            }
+        } else {
+            gs.warn('Plugin update process (x_snc_update_all) ▸ Failed to start app update check worker or get its progress ID.');
+        }
+        
+        gs.info('Plugin update process (x_snc_update_all) ▸ Store data refresh attempt finished.');
+    } catch (ex) {
+        gs.error('Plugin update process (x_snc_update_all) ▸ Exception during store data refresh: ' + ex);
+        // Continue with the update process even if refresh fails
+    }
+
     var skipListProperty = gs.getProperty('x_snc_update_all.plugin.update.skip.list', '');
     var skip = (skipListProperty || '')
             .split(',')
@@ -57,7 +106,7 @@ Returns:&#13;
     var failed = [];
     var total = gr.getRowCount();
     
-    gs.info('Plugin update process (x_snc_update_all) ▸ Found ' + total + ' updatable plugins');
+    gs.info('Plugin update process (x_snc_update_all) ▸ Found ' + total + ' updatable plugins after refresh attempt.');
 
     var maxUpdatesPerRun = parseInt(gs.getProperty('x_snc_update_all.plugin.update.batch.size', '10')) || 10;
     var updateCount = 0;
@@ -115,13 +164,13 @@ Returns:&#13;
         <sys_created_by>admin</sys_created_by>
         <sys_created_on>2025-05-19 14:20:25</sys_created_on>
         <sys_id>c6a14eeafb216a143225f8454eefdc3d</sys_id>
-        <sys_mod_count>0</sys_mod_count>
+        <sys_mod_count>10</sys_mod_count>
         <sys_name>UpdateAllPlugins</sys_name>
         <sys_package display_value="ServiceNow Update All" source="x_snc_update_all">9b9d89f12bad22144271f21a6e91bfe4</sys_package>
         <sys_policy>read</sys_policy>
         <sys_scope display_value="ServiceNow Update All">9b9d89f12bad22144271f21a6e91bfe4</sys_scope>
         <sys_update_name>sys_script_include_c6a14eeafb216a143225f8454eefdc3d</sys_update_name>
         <sys_updated_by>admin</sys_updated_by>
-        <sys_updated_on>2025-05-19 14:20:25</sys_updated_on>
+        <sys_updated_on>2025-05-20 14:35:36</sys_updated_on>
     </sys_script_include>
 </record_update>
