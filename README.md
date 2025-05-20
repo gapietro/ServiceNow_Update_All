@@ -50,7 +50,16 @@ You can modify the schedule through the Scheduled Jobs table in ServiceNow.
 
 ### Manual Execution
 
-To run the update process manually:
+There are two ways to manually execute the update process:
+
+#### Option 1: Execute the Scheduled Job directly
+
+1. Navigate to System Definition > Scheduled Jobs
+2. Search for "UpdateAll Plugins Weekly Job"
+3. Open the job record
+4. Click the "Execute Now" button at the top of the form
+
+#### Option 2: Run via Background Script
 
 1. Navigate to System Definition > Scripts - Background
 2. Create a new background script
@@ -66,7 +75,7 @@ To run the update process manually:
 The application generates detailed logs that can be viewed in the System Logs:
 
 1. Navigate to System Logs > System Log
-2. Filter for messages containing "x_snc_update_all"
+2. Filter for Source containing "x_snc_update_all"
 
 The logs include:
 - Start and completion of the update process
