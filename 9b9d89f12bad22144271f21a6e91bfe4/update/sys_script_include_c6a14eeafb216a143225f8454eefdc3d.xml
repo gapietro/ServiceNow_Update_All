@@ -76,13 +76,13 @@ Returns:&#13;
     var updateCount = 0;
 
     while (gr.next() && updateCount < maxUpdatesPerRun) {
-        var id = gr.getUniqueValue();
+        var sysId = gr.getUniqueValue();  // FIXED: Use sys_id instead of source
         var source = gr.getValue('source');
         var name = gr.getValue('name');
         var currentVer = gr.getValue('version');
         var newVersion = gr.getValue('latest_version');
 
-        if (skip.indexOf(source) > -1 || skip.indexOf(id) > -1) {
+        if (skip.indexOf(source) > -1 || skip.indexOf(sysId) > -1) {
             skipped.push(name);
             gs.info('Plugin update (x_snc_update_all) ▸ SKIPPED ' + name + ' (in skip list)');
             continue;
@@ -91,7 +91,7 @@ Returns:&#13;
         try {
             gs.info('Plugin update (x_snc_update_all) ▸ QUEUED ' + name + ' [' + currentVer + ' → ' + newVersion + ']');
             var updateStartTime = new Date();
-            upgrader.upgrade(id, newVersion, false);
+            upgrader.upgrade(sysId, newVersion, false);  // FIXED: Use sysId instead of id or source
             var updateDuration = (new Date() - updateStartTime) / 1000;
             updated.push(name);
             updateCount++;

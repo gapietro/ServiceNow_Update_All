@@ -2,7 +2,7 @@
     <sys_app action="INSERT_OR_UPDATE">
         <active>true</active>
         <can_edit_in_studio>true</can_edit_in_studio>
-        <enforce_license>none</enforce_license>
+        <enforce_license>log</enforce_license>
         <guided_setup_guid/>
         <hide_on_ui>false</hide_on_ui>
         <ide_created>GAC</ide_created>
@@ -17,12 +17,14 @@
         <menu/>
         <name>ServiceNow Update All</name>
         <package_json/>
+        <package_resolver_version>1.0.0</package_resolver_version>
         <private>false</private>
         <restrict_table_access>false</restrict_table_access>
         <runtime_access_tracking>permissive</runtime_access_tracking>
         <scope>x_snc_update_all</scope>
         <scoped_administration>false</scoped_administration>
         <short_description>ServiceNow Scoped Application</short_description>
+        <sn_managed>false</sn_managed>
         <source>x_snc_update_all</source>
         <store_correlation_id/>
         <store_url/>
@@ -32,16 +34,16 @@
         <sys_created_by>admin</sys_created_by>
         <sys_created_on>2025-05-17 02:32:38</sys_created_on>
         <sys_id>9b9d89f12bad22144271f21a6e91bfe4</sys_id>
-        <sys_mod_count>4</sys_mod_count>
+        <sys_mod_count>7</sys_mod_count>
         <sys_updated_by>admin</sys_updated_by>
-        <sys_updated_on>2025-05-20 12:53:40</sys_updated_on>
+        <sys_updated_on>2026-11-17 23:16:00</sys_updated_on>
         <template/>
         <trackable>true</trackable>
         <uninstall_blocked>false</uninstall_blocked>
         <user_role/>
         <vendor/>
         <vendor_prefix/>
-        <version>1.0.3</version>
+        <version>1.0.6</version>
     </sys_app>
     <sys_translated_text action="delete_multiple" query="documentkey=9b9d89f12bad22144271f21a6e91bfe4"/>
 </record_update>
