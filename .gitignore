@@ -3,3 +3,6 @@
 
 # Temporary files
 tmp/
+
+# Local MCP config
+.mcp.json
