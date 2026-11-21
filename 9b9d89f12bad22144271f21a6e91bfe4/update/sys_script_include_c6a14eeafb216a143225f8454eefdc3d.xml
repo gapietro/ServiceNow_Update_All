@@ -33,108 +33,185 @@ Returns:&#13;
         <name>UpdateAllPlugins</name>
         <sandbox_callable>false</sandbox_callable>
         <script><![CDATA[var UpdateAllPlugins = function() {
+    var TAG = 'Plugin update process (x_snc_update_all) ▸ ';
     var scriptStartTime = new Date();
-    gs.info('Plugin update process (x_snc_update_all) ▸ STARTED at ' + scriptStartTime);
+    gs.info(TAG + 'STARTED at ' + scriptStartTime);
 
-    // Refresh store data before checking for updates
-    try {
-        gs.info('Plugin update process (x_snc_update_all) ▸ Refreshing store data...');
-        
-        // This is the correct method to use for updating the store app data
-        new sn_appclient.UpdateChecker().checkAvailableUpdates();
-        
-        gs.info('Plugin update process (x_snc_update_all) ▸ Store data refresh completed');
-    } catch (ex) {
-        gs.error('Plugin update process (x_snc_update_all) ▸ Failed to refresh store data: ' + ex);
-        // Continue with the update process even if refresh fails
-    }
-
-    var skipListProperty = gs.getProperty('x_snc_update_all.plugin.update.skip.list', '');
-    var skip = (skipListProperty || '')
-            .split(',')
-            .map(function (s) {return s.trim();})
-            .filter(function(s) {return s.length > 0;});
-    
-    if (skip.length > 0) {
-        gs.info('Plugin update process (x_snc_update_all) ▸ Skipping: ' + skip.join(', '));
-    }
-
-    var gr = new GlideRecord('sys_store_app');
-    gr.addEncodedQuery('hide_on_ui=false^update_available=true');
-    gr.orderBy('name');
-    gr.query();
-    
-    var upgrader = new sn_appclient.AppUpgrader(); 
-    var updated = [];
+    var updated = [];   // accepted/submitted for upgrade (not confirmed complete)
     var skipped = [];
     var failed = [];
-    var total = gr.getRowCount();
-    
-    gs.info('Plugin update process (x_snc_update_all) ▸ Found ' + total + ' updatable plugins');
+    var remaining = 0;  // eligible plugins not attempted because of the batch limit
+    var errorMessage = '';
 
-    var maxUpdatesPerRun = parseInt(gs.getProperty('x_snc_update_all.plugin.update.batch.size', '10')) || 10;
-    var updateCount = 0;
+    // Single exit path: always logs the summary and returns the result object.
+    function finish() {
+        var totalDuration = (new Date() - scriptStartTime) / 1000;
+        gs.info('Plugin update summary (x_snc_update_all) ▸ Submitted: ' + updated.length +
+                ', Skipped: ' + skipped.length +
+                ', Failed: '  + failed.length +
+                ', Remaining: ' + remaining +
+                ', Duration: ' + totalDuration + 's');
 
-    while (gr.next() && updateCount < maxUpdatesPerRun) {
-        var sysId = gr.getUniqueValue();  // FIXED: Use sys_id instead of source
-        var source = gr.getValue('source');
-        var name = gr.getValue('name');
-        var currentVer = gr.getValue('version');
-        var newVersion = gr.getValue('latest_version');
+        if (errorMessage) {
+            gs.error('Plugin update aborted (x_snc_update_all) ▸ ' + errorMessage);
+        }
+        if (failed.length > 0) {
+            gs.error('Plugin update failures (x_snc_update_all) ▸ ' + failed.join(', '));
+        }
 
-        if (skip.indexOf(source) > -1 || skip.indexOf(sysId) > -1) {
-            skipped.push(name);
-            gs.info('Plugin update (x_snc_update_all) ▸ SKIPPED ' + name + ' (in skip list)');
-            continue;
+        return {
+            success: !errorMessage && failed.length === 0,
+            updated: updated,
+            skipped: skipped,
+            failed: failed,
+            remaining: remaining,
+            duration: totalDuration,
+            error: errorMessage
+        };
+    }
+
+    try {
+        // Refresh store data before checking for updates
+        try {
+            gs.info(TAG + 'Refreshing store data...');
+
+            // This is the correct method to use for updating the store app data
+            new sn_appclient.UpdateChecker().checkAvailableUpdates();
+
+            gs.info(TAG + 'Store data refresh completed');
+        } catch (ex) {
+            gs.error(TAG + 'Failed to refresh store data: ' + ex);
+            // Continue with the update process even if refresh fails
+        }
+
+        var skipListProperty = gs.getProperty('x_snc_update_all.plugin.update.skip.list', '');
+        var skip = (skipListProperty || '')
+                .split(',')
+                .map(function (s) {return s.trim();})
+                .filter(function(s) {return s.length > 0;});
+
+        if (skip.length > 0) {
+            gs.info(TAG + 'Skipping: ' + skip.join(', '));
+        }
+
+        // Setup: query and upgrader creation. Nothing can proceed if either fails.
+        var gr;
+        var upgrader;
+        try {
+            gr = new GlideRecord('sys_store_app');
+            gr.addEncodedQuery('hide_on_ui=false^update_available=true');
+            gr.orderBy('name');
+            gr.query();
+        } catch (ex) {
+            errorMessage = 'Failed to query sys_store_app: ' + (ex.message || String(ex));
+            return finish();
         }
 
         try {
-            gs.info('Plugin update (x_snc_update_all) ▸ QUEUED ' + name + ' [' + currentVer + ' → ' + newVersion + ']');
-            var updateStartTime = new Date();
-            upgrader.upgrade(sysId, newVersion, false);  // FIXED: Use sysId instead of id or source
-            var updateDuration = (new Date() - updateStartTime) / 1000;
-            updated.push(name);
-            updateCount++;
-            gs.info('Plugin update (x_snc_update_all) ▸ COMPLETE ' + name + ' (took ' + updateDuration + 's)');
+            upgrader = new sn_appclient.AppUpgrader();
         } catch (ex) {
-            var errorInfo = name + ' (' + (ex.message || String(ex)) + ')';
-            failed.push(errorInfo);
-            gs.error('Plugin update (x_snc_update_all) ▸ FAILED ' + name + ' – ' + ex);
+            errorMessage = 'Failed to create AppUpgrader: ' + (ex.message || String(ex));
+            return finish();
         }
+
+        var total = gr.getRowCount();
+        gs.info(TAG + 'Found ' + total + ' updatable plugins');
+
+        var maxUpdatesPerRun = parseInt(gs.getProperty('x_snc_update_all.plugin.update.batch.size', '10'), 10) || 10;
+        var attemptCount = 0;   // successful submissions AND failed attempts count toward the batch
+
+        while (gr.next()) {
+            var sysId = gr.getUniqueValue();
+            var source = gr.getValue('source');
+            var name = gr.getValue('name');
+            var currentVer = gr.getValue('version');
+            var newVersion = gr.getValue('latest_version');
+
+            // Skip list
+            if (skip.indexOf(source) > -1 || skip.indexOf(sysId) > -1) {
+                skipped.push(name);
+                gs.info('Plugin update (x_snc_update_all) ▸ SKIPPED ' + name + ' (in skip list)');
+                continue;
+            }
+
+            // Validate latest_version. Invalid data is skipped and does not use up the batch.
+            if (!newVersion || !String(newVersion).trim()) {
+                skipped.push(name + ' (no latest_version)');
+                gs.warn('Plugin update (x_snc_update_all) ▸ SKIPPED ' + name + ' (latest_version is empty)');
+                continue;
+            }
+            if (newVersion === currentVer) {
+                skipped.push(name + ' (latest_version equals installed version)');
+                gs.warn('Plugin update (x_snc_update_all) ▸ SKIPPED ' + name + ' (latest_version equals installed version ' + currentVer + ')');
+                continue;
+            }
+
+            // Eligible but batch is full: leave for the next run.
+            if (attemptCount >= maxUpdatesPerRun) {
+                remaining++;
+                continue;
+            }
+
+            attemptCount++;   // counts whether the attempt succeeds or fails
+            try {
+                gs.info('Plugin update (x_snc_update_all) ▸ QUEUED ' + name + ' [' + currentVer + ' → ' + newVersion + ']');
+                var updateStartTime = new Date();
+                var upgradeResult = upgrader.upgrade(sysId, newVersion, false);
+                var updateDuration = (new Date() - updateStartTime) / 1000;
+
+                // upgrade() is not publicly documented. Log what it returns and treat an explicit
+                // false / error / failure indication as a failed submission.
+                var upgradeResultText;
+                if (upgradeResult === undefined || upgradeResult === null) {
+                    upgradeResultText = '(no return value)';
+                } else if (typeof upgradeResult === 'object') {
+                    try {
+                        upgradeResultText = JSON.stringify(upgradeResult);
+                    } catch (jsonEx) {
+                        upgradeResultText = String(upgradeResult);
+                    }
+                } else {
+                    upgradeResultText = String(upgradeResult);
+                }
+                var rejected = (upgradeResult === false) ||
+                               (upgradeResult && typeof upgradeResult === 'object' &&
+                                (upgradeResult.error || upgradeResult.success === false || upgradeResult.status === 'failed'));
+
+                if (rejected) {
+                    failed.push(name + ' (upgrade() rejected: ' + upgradeResultText + ')');
+                    gs.error('Plugin update (x_snc_update_all) ▸ FAILED ' + name + ' – upgrade() returned ' + upgradeResultText);
+                } else {
+                    updated.push(name);
+                    gs.info('Plugin update (x_snc_update_all) ▸ SUBMITTED ' + name + ' (took ' + updateDuration + 's, upgrade() returned ' + upgradeResultText + ')');
+                }
+            } catch (ex) {
+                failed.push(name + ' (' + (ex.message || String(ex)) + ')');
+                gs.error('Plugin update (x_snc_update_all) ▸ FAILED ' + name + ' – ' + ex);
+            }
+        }
+
+        if (remaining > 0) {
+            gs.info(TAG + 'Processed batch of ' + maxUpdatesPerRun + '. Remaining: ' + remaining);
+        }
+    } catch (ex) {
+        // Anything unexpected: still produce a summary and a result.
+        errorMessage = 'Unexpected error: ' + (ex.message || String(ex));
     }
 
-    if (updateCount >= maxUpdatesPerRun && total > updateCount) {
-        gs.info('Plugin update process (x_snc_update_all) ▸ Processed batch of ' + maxUpdatesPerRun + '. Remaining: ' + (total - updateCount));
-    }
-
-    var totalDuration = (new Date() - scriptStartTime) / 1000;
-    gs.info('Plugin update summary (x_snc_update_all) ▸ Updated: ' + updated.length +
-            ', Skipped: ' + skipped.length +
-            ', Failed: '  + failed.length + 
-            ', Duration: ' + totalDuration + 's');
-
-    if (failed.length > 0) {
-        gs.info('Plugin update failures (x_snc_update_all) ▸ ' + failed.join(', '));
-    }
-
-    return {
-        updated: updated,
-        skipped: skipped,
-        failed: failed,
-        duration: totalDuration
-    };
-};]]></script>
+    return finish();
+};
+]]></script>
         <sys_class_name>sys_script_include</sys_class_name>
         <sys_created_by>admin</sys_created_by>
         <sys_created_on>2025-05-19 14:20:25</sys_created_on>
         <sys_id>c6a14eeafb216a143225f8454eefdc3d</sys_id>
-        <sys_mod_count>11</sys_mod_count>
+        <sys_mod_count>14</sys_mod_count>
         <sys_name>UpdateAllPlugins</sys_name>
         <sys_package display_value="ServiceNow Update All" source="x_snc_update_all">9b9d89f12bad22144271f21a6e91bfe4</sys_package>
         <sys_policy>read</sys_policy>
         <sys_scope display_value="ServiceNow Update All">9b9d89f12bad22144271f21a6e91bfe4</sys_scope>
         <sys_update_name>sys_script_include_c6a14eeafb216a143225f8454eefdc3d</sys_update_name>
         <sys_updated_by>admin</sys_updated_by>
-        <sys_updated_on>2025-05-20 15:28:17</sys_updated_on>
+        <sys_updated_on>2026-11-21 00:58:39</sys_updated_on>
     </sys_script_include>
 </record_update>
